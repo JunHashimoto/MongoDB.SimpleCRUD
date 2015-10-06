@@ -63,21 +63,50 @@ namespace MongoDB
             return DeserializeBson<T>(doc.Result);
         }
 
-        private T DeserializeBson<T>(BsonDocument bsonDoc)
+        public List<T> GetList<T>(string key, object value)
+        {
+            var type = typeof(T);
+            if (string.IsNullOrEmpty(key)) { key = "Id"; }
+
+            MongoClient client = new MongoClient(_connectionString);
+            IMongoDatabase db = client.GetDatabase(_database);
+
+            string dbName = PluralizationService
+                            .CreateService(System.Globalization.CultureInfo.GetCultureInfo("en-US"))
+                            .Pluralize(type.Name.ToLower());
+            var collection = db.GetCollection<BsonDocument>(dbName);
+
+            var filter = Builders<BsonDocument>.Filter.Eq(key, value);
+
+            var docs = collection.Find(filter).ToListAsync();
+            docs.Wait();
+
+            if (docs.Result.Count > 0)
+            {
+                List<string> propertyNames = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).ToList();
+                return docs.Result.Select(d => DeserializeBson<T>(d, propertyNames)).ToList();
+            }
+            return new List<T>();
+        }
+
+        private T DeserializeBson<T>(BsonDocument bsonDoc, List<string> properyNames = null)
         {
             var type = typeof(T);
 
-            List<string> propNames = type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).ToList();
+            if (properyNames == null)
+            {
+                properyNames = type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).ToList();
+            }
 
             List<BsonElement> elements = new List<BsonElement>();
             foreach (var element in bsonDoc.Elements)
             {
                 string titleCase = System.Globalization.CultureInfo.GetCultureInfo("en-US").TextInfo.ToTitleCase(element.Name);
-                if (propNames.Contains(titleCase))
+                if (properyNames.Contains(titleCase))
                 {
                     elements.Add(new BsonElement(titleCase, element.Value));
                 }
-                else if (propNames.Contains(element.Name))
+                else if (properyNames.Contains(element.Name))
                 {
                     elements.Add(element);
                 }
