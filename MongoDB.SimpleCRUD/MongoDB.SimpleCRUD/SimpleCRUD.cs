@@ -32,6 +32,16 @@ namespace MongoDB
         #endregion
 
         #region Get
+        /// <summary>
+        /// Retrieve an instance object from MongoDB with ObjectId
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="objectId"></param>
+        /// <returns></returns>
+        public T Get<T>(string objectId)
+        {
+            return Get<T>("_id", objectId);
+        }
 
         /// <summary>
         /// Retrieve an instance object from MongoDB.
@@ -185,6 +195,46 @@ namespace MongoDB
             return deleteTask.Result.DeletedCount;
         }
 
+        #endregion
+
+        #region Update
+
+        public void Update<T>(T entityToUpdate)
+        {
+            BsonDocument bsonDoc = entityToUpdate.ToBsonDocument();
+
+            foreach (var element in bsonDoc.Elements)
+            {
+                if ((string.Compare(element.Name, "_id", true) == 0))
+                {
+                    Update<T>(entityToUpdate, element.Name, element.Value);
+                    return;
+                }
+            }
+        }
+        /// <summary>
+        /// Update one entity.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="entityToUpdate"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        public void Update<T>(T entityToUpdate, string key, object value)
+        {
+            string collectionName = PluralizationService
+                                   .CreateService(System.Globalization.CultureInfo.GetCultureInfo("en-US"))
+                                   .Pluralize(typeof(T).Name.ToLower());
+            var collection = _db.GetCollection<BsonDocument>(collectionName);
+
+            var filter = Builders<BsonDocument>.Filter.Eq(key, value);
+            foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var update = Builders<BsonDocument>.Update.Set(property.Name, property.GetValue(entityToUpdate));
+                var updateTask = collection.UpdateOneAsync(filter, update);
+                updateTask.Wait();
+            }
+        }
+        
         #endregion
     }
 }
