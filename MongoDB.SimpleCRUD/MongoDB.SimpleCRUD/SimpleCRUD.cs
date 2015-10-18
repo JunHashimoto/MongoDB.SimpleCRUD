@@ -54,7 +54,7 @@ namespace MongoDB
         {
             var type = typeof(T);
             if (string.IsNullOrEmpty(key)) { key = "_id"; }
-            
+
             string collectionName = PluralizationService
                                    .CreateService(System.Globalization.CultureInfo.GetCultureInfo("en-US"))
                                    .Pluralize(type.Name.ToLower());
@@ -62,19 +62,17 @@ namespace MongoDB
 
             var filter = Builders<BsonDocument>.Filter.Eq(key, value);
 
-            var doc = collection.Find(filter).FirstOrDefaultAsync();
-            doc.Wait();
+            var doc = collection.Find(filter).FirstOrDefaultAsync().Result;
+            if (doc == null) { return default(T); }
 
-            if (doc.Result == null) { return default(T); }
-
-            return DeserializeBson<T>(doc.Result);
+            return DeserializeBson<T>(doc);
         }
 
         public List<T> GetList<T>(string key, object value)
         {
             var type = typeof(T);
             if (string.IsNullOrEmpty(key)) { key = "_id"; }
-            
+
             string collectionName = PluralizationService
                                     .CreateService(System.Globalization.CultureInfo.GetCultureInfo("en-US"))
                                     .Pluralize(type.Name.ToLower());
@@ -82,13 +80,12 @@ namespace MongoDB
 
             var filter = Builders<BsonDocument>.Filter.Eq(key, value);
 
-            var docs = collection.Find(filter).ToListAsync();
-            docs.Wait();
+            var docs = collection.Find(filter).ToListAsync().Result;
 
-            if (docs.Result.Count > 0)
+            if (docs.Count > 0)
             {
                 List<string> propertyNames = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name).ToList();
-                return docs.Result.Select(d => DeserializeBson<T>(d, propertyNames)).ToList();
+                return docs.Select(d => DeserializeBson<T>(d, propertyNames)).ToList();
             }
             return new List<T>();
         }
@@ -139,8 +136,7 @@ namespace MongoDB
             var collection = _db.GetCollection<BsonDocument>(collectionName);
 
             BsonDocument bsonDoc = entityToInsert.ToBsonDocument();
-            var insertTask = collection.InsertOneAsync(bsonDoc);
-            insertTask.Wait();
+            collection.InsertOneAsync(bsonDoc).Wait();
 
             return bsonDoc.Elements.FirstOrDefault(e => e.Value.IsObjectId).Value.ToString();
         }
@@ -167,9 +163,8 @@ namespace MongoDB
             var collection = _db.GetCollection<BsonDocument>(collectionName);
             var filter = Builders<BsonDocument>.Filter.Eq(key, value);
 
-            var deleteTask = collection.DeleteOneAsync(filter);
-            deleteTask.Wait();
-            return (deleteTask.Result.DeletedCount == 1);
+            var deleted = collection.DeleteOneAsync(filter).Result;
+            return (deleted.DeletedCount == 1);
         }
 
         /// <summary>
@@ -190,9 +185,7 @@ namespace MongoDB
             var collection = _db.GetCollection<BsonDocument>(collectionName);
             var filter = Builders<BsonDocument>.Filter.Eq(key, value);
 
-            var deleteTask = collection.DeleteManyAsync(filter);
-            deleteTask.Wait();
-            return deleteTask.Result.DeletedCount;
+            return collection.DeleteManyAsync(filter).Result.DeletedCount;
         }
 
         #endregion
@@ -230,11 +223,10 @@ namespace MongoDB
             foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 var update = Builders<BsonDocument>.Update.Set(property.Name, property.GetValue(entityToUpdate));
-                var updateTask = collection.UpdateOneAsync(filter, update);
-                updateTask.Wait();
+                collection.UpdateOneAsync(filter, update).Wait();
             }
         }
-        
+
         #endregion
     }
 }
